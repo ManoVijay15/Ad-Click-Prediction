@@ -9,7 +9,7 @@ from sklearn.preprocessing import LabelEncoder
 HASH_COLS = ["site_id", "site_domain", "app_id", "app_domain", "device_id", "device_ip"]
 
 # Low-cardinality categoricals encoded directly
-LABEL_COLS = ["site_category", "app_category", "device_make", "device_model", "device_type"]
+LABEL_COLS = ["site_category", "app_category", "device_model", "device_type"]
 
 # Numeric passthrough
 NUMERIC_COLS = ["banner_pos", "C1", "C14", "C15", "C16", "C17", "C18", "C19", "C20", "C21"]
