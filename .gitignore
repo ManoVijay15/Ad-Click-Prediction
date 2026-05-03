@@ -36,6 +36,8 @@ data/processed/
 # MLflow
 mlruns/
 mlartifacts/
+mlflow.db
+encoders.pkl
 
 # Environment
 .env

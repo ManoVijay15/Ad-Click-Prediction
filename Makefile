@@ -16,19 +16,31 @@ test-unit:
 test-integration:
 	pytest tests/integration/ -v
 
+baseline:
+	.venv/bin/python -m src.models.baseline
+
 train:
-	python -m src.models.train
+	.venv/bin/python -m src.models.train
 
 tune:
-	python -m src.models.tune
+	.venv/bin/python -m src.models.tune
 
 serve:
 	uvicorn src.api.main:app --host 0.0.0.0 --port 8000 --reload
 
+mlflow:
+	mkdir -p mlruns
+	.venv/bin/mlflow server \
+		--backend-store-uri sqlite:///mlflow.db \
+		--default-artifact-root ./mlruns \
+		--host 0.0.0.0 \
+		--port 5000
+
 infra-up:
-	docker compose up -d postgres mlflow redis
-	@echo "MLflow UI: http://localhost:5000"
+	docker compose up -d postgres redis
+	@echo "Postgres:  localhost:5432"
 	@echo "Redis:     localhost:6379"
+	@echo "Run 'make mlflow' in a separate terminal for MLflow UI"
 
 infra-down:
 	docker compose down

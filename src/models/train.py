@@ -1,15 +1,16 @@
 """Train LightGBM CTR model and register it in MLflow."""
 
+import argparse
 import os
 import pickle
-import argparse
-import pandas as pd
+import tempfile
+
 import lightgbm as lgb
 import mlflow
 import mlflow.lightgbm
-from sklearn.model_selection import train_test_split
-from sklearn.metrics import roc_auc_score, log_loss
+import pandas as pd
 from loguru import logger
+from sklearn.metrics import roc_auc_score, log_loss
 
 from src.features.engineering import build_features, FEATURE_COLS
 
@@ -33,26 +34,38 @@ LGBM_PARAMS = {
 }
 
 
-def load_data(path: str) -> pd.DataFrame:
-    logger.info(f"Loading data from {path}")
-    return pd.read_csv(path)
+def load_data(path: str, sample: int | None = None) -> pd.DataFrame:
+    logger.info(f"Loading data from {path}" + (f" (sample={sample:,})" if sample else ""))
+    df = pd.read_csv(path, dtype={"hour": str})
+    if sample and sample < len(df):
+        df = df.sample(n=sample, random_state=42).reset_index(drop=True)
+    return df
 
 
-def train(data_path: str, register: bool = False) -> None:
+def train(
+    train_path: str = "data/processed/train.csv",
+    val_path: str = "data/processed/val.csv",
+    register: bool = False,
+    sample: int | None = 5_000_000,
+) -> None:
     mlflow.set_tracking_uri(MLFLOW_URI)
     mlflow.set_experiment(EXPERIMENT_NAME)
 
-    df = load_data(data_path)
-    df, encoders = build_features(df)
+    logger.info("Building train features")
+    train_df = load_data(train_path, sample=sample)
+    train_df, encoders = build_features(train_df)
 
-    feature_cols = [c for c in FEATURE_COLS if c in df.columns]
-    X = df[feature_cols]
-    y = df["click"]
+    logger.info("Building val features")
+    val_df = load_data(val_path, sample=500_000)
+    val_df, _ = build_features(val_df, encoders=encoders)
 
-    X_train, X_val, y_train, y_val = train_test_split(
-        X, y, test_size=0.2, random_state=42, stratify=y
-    )
-    logger.info(f"Train: {len(X_train):,}  Val: {len(X_val):,}  CTR: {y.mean():.4f}")
+    feature_cols = [c for c in FEATURE_COLS if c in train_df.columns]
+    X_train = train_df[feature_cols]
+    y_train = train_df["click"]
+    X_val = val_df[feature_cols]
+    y_val = val_df["click"]
+
+    logger.info(f"Train: {len(X_train):,}  Val: {len(X_val):,}  CTR: {y_train.mean():.4f}")
 
     with mlflow.start_run():
         mlflow.log_params(LGBM_PARAMS)
@@ -77,10 +90,11 @@ def train(data_path: str, register: bool = False) -> None:
 
         mlflow.lightgbm.log_model(model, artifact_path="model")
 
-        # Save encoders alongside the model
-        with open("encoders.pkl", "wb") as f:
-            pickle.dump(encoders, f)
-        mlflow.log_artifact("encoders.pkl")
+        with tempfile.TemporaryDirectory() as tmp:
+            enc_path = f"{tmp}/encoders.pkl"
+            with open(enc_path, "wb") as f:
+                pickle.dump(encoders, f)
+            mlflow.log_artifact(enc_path)
 
         if register:
             run_id = mlflow.active_run().info.run_id
@@ -90,7 +104,11 @@ def train(data_path: str, register: bool = False) -> None:
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--data", default="data/processed/train.csv")
+    parser.add_argument("--train", default="data/processed/train.csv")
+    parser.add_argument("--val", default="data/processed/val.csv")
     parser.add_argument("--register", action="store_true")
+    parser.add_argument("--sample", type=int, default=5_000_000,
+                        help="Train rows to use (default 5M for dev; pass 0 for full dataset)")
     args = parser.parse_args()
-    train(args.data, register=args.register)
+    train(args.train, args.val, register=args.register,
+          sample=args.sample if args.sample > 0 else None)
