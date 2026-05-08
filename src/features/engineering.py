@@ -16,8 +16,14 @@ N_BUCKETS = 2**18
 
 
 def _vec_hash(series: pd.Series, n_buckets: int = N_BUCKETS) -> pd.Series:
-    """Vectorized string hash — ~10x faster than apply(hash())."""
-    return series.astype(str).apply(hash) % n_buckets
+    """Deterministic vectorized hash.
+
+    Uses pandas' hash_pandas_object (xxhash-based, fixed seed) so the same
+    input string maps to the same bucket across processes — critical for
+    train/serve consistency.
+    """
+    hashes = pd.util.hash_pandas_object(series.astype(str), index=False)
+    return (hashes % n_buckets).astype("int64")
 
 
 def extract_time_features(df: pd.DataFrame) -> pd.DataFrame:

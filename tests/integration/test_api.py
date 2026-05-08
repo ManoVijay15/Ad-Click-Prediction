@@ -1,7 +1,9 @@
 """Integration tests for the FastAPI prediction endpoint."""
 
-import pytest
 from unittest.mock import MagicMock, patch
+
+import numpy as np
+import pytest
 from fastapi.testclient import TestClient
 
 
@@ -18,7 +20,6 @@ SAMPLE_PAYLOAD = {
     "device_ip": "1.2.3.4",
     "device_model": "modelA",
     "device_type": 1,
-    "device_make": "makeA",
     "C1": 1005, "C14": 21689, "C15": 320, "C16": 50,
     "C17": 112, "C18": 0, "C19": 35, "C20": -1, "C21": 79,
 }
@@ -27,10 +28,13 @@ SAMPLE_PAYLOAD = {
 @pytest.fixture
 def client():
     mock_model = MagicMock()
-    mock_model.predict_proba.return_value = [[0.7, 0.3]]
+    mock_model.predict_proba.return_value = np.array([[0.7, 0.3]])
 
-    with patch("src.api.main._model", mock_model), \
-         patch("src.api.main._encoders", {}):
+    mock_store = MagicMock()
+    mock_store.get.return_value = {}
+
+    with patch.dict("src.api.main._state", {"model": mock_model, "version": "1"}), \
+         patch("src.api.main.get_store", return_value=mock_store):
         from src.api.main import app
         with TestClient(app) as c:
             yield c
@@ -48,6 +52,7 @@ def test_predict_returns_probability(client):
     data = response.json()
     assert "click_probability" in data
     assert 0.0 <= data["click_probability"] <= 1.0
+    assert data["model_version"] == "1"
 
 
 def test_predict_will_click_threshold(client):

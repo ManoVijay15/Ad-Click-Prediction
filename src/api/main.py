@@ -1,44 +1,35 @@
 """FastAPI serving layer for ad-click prediction."""
 
 import os
-import pickle
-import mlflow.lightgbm
+from contextlib import asynccontextmanager
+
 import pandas as pd
 from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel, Field
 from loguru import logger
+from pydantic import BaseModel, Field
 
-app = FastAPI(title="Ad-Click Prediction API", version="0.1.0")
+from src.features.engineering import build_features, FEATURE_COLS
+from src.features.store import get_store
+from src.models.loader import load_model_and_encoders
 
 MODEL_NAME = os.getenv("MODEL_NAME", "ad-click-lgbm")
-MODEL_STAGE = os.getenv("MODEL_STAGE", "Production")
-MLFLOW_URI = os.getenv("MLFLOW_TRACKING_URI", "http://localhost:5000")
+MODEL_ALIAS = os.getenv("MODEL_ALIAS", "production")
 
-_model = None
-_encoders = None
+_state: dict = {"model": None, "encoders": None, "version": None}
 
 
-def _load_model():
-    global _model, _encoders
-    mlflow.set_tracking_uri(MLFLOW_URI)
-    logger.info(f"Loading model {MODEL_NAME} @ {MODEL_STAGE}")
-    _model = mlflow.lightgbm.load_model(f"models:/{MODEL_NAME}/{MODEL_STAGE}")
-
-    client = mlflow.MlflowClient()
-    versions = client.get_latest_versions(MODEL_NAME, stages=[MODEL_STAGE])
-    if versions:
-        run_id = versions[0].run_id
-        artifact_path = mlflow.artifacts.download_artifacts(
-            run_id=run_id, artifact_path="encoders.pkl"
-        )
-        with open(artifact_path, "rb") as f:
-            _encoders = pickle.load(f)
-    logger.info("Model and encoders loaded successfully")
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    model, encoders, version = load_model_and_encoders(MODEL_NAME, MODEL_ALIAS)
+    _state["model"] = model
+    _state["encoders"] = encoders
+    _state["version"] = version
+    get_store()  # warm the feature store connection
+    logger.info(f"API ready — {MODEL_NAME} v{version}")
+    yield
 
 
-@app.on_event("startup")
-async def startup():
-    _load_model()
+app = FastAPI(title="Ad-Click Prediction API", version="0.1.0", lifespan=lifespan)
 
 
 class AdRequest(BaseModel):
@@ -54,7 +45,6 @@ class AdRequest(BaseModel):
     device_ip: str = "unknown"
     device_model: str = "unknown"
     device_type: int = 0
-    device_make: str = "unknown"
     C1: int = 1005
     C14: int = 0
     C15: int = 320
@@ -70,27 +60,45 @@ class AdResponse(BaseModel):
     click_probability: float
     will_click: bool
     threshold: float = 0.5
+    model_version: str | None = None
+    cached_features: dict[str, float] | None = None
 
 
 @app.post("/predict", response_model=AdResponse)
 async def predict(request: AdRequest):
-    if _model is None:
+    model = _state["model"]
+    if model is None:
         raise HTTPException(status_code=503, detail="Model not loaded")
 
-    from src.features.engineering import build_features, FEATURE_COLS
-
     df = pd.DataFrame([request.model_dump()])
-    df, _ = build_features(df, encoders=_encoders)
+    df, _ = build_features(df, encoders=_state["encoders"])
     feature_cols = [c for c in FEATURE_COLS if c in df.columns]
     X = df[feature_cols]
 
-    proba = float(_model.predict_proba(X)[0, 1])
-    return AdResponse(click_probability=proba, will_click=proba >= 0.5)
+    proba = float(model.predict_proba(X)[0, 1])
+
+    store = get_store()
+    cached = {
+        **{f"site_{k}": v for k, v in store.get("site", request.site_id).items()},
+        **{f"app_{k}": v for k, v in store.get("app", request.app_id).items()},
+        **{f"device_{k}": v for k, v in store.get("device", request.device_id).items()},
+    }
+
+    return AdResponse(
+        click_probability=proba,
+        will_click=proba >= 0.5,
+        model_version=_state["version"],
+        cached_features=cached or None,
+    )
 
 
 @app.get("/health")
 async def health():
-    return {"status": "ok", "model_loaded": _model is not None}
+    return {
+        "status": "ok",
+        "model_loaded": _state["model"] is not None,
+        "model_version": _state["version"],
+    }
 
 
 @app.get("/")

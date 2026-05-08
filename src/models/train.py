@@ -16,6 +16,8 @@ from src.features.engineering import build_features, FEATURE_COLS
 
 MLFLOW_URI = os.getenv("MLFLOW_TRACKING_URI", "http://localhost:5000")
 EXPERIMENT_NAME = "ad-click-lgbm"
+MODEL_NAME = "ad-click-lgbm"
+ENCODERS_ARTIFACT = "encoders.pkl"
 
 LGBM_PARAMS = {
     "objective": "binary",
@@ -67,7 +69,7 @@ def train(
 
     logger.info(f"Train: {len(X_train):,}  Val: {len(X_val):,}  CTR: {y_train.mean():.4f}")
 
-    with mlflow.start_run():
+    with mlflow.start_run() as run:
         mlflow.log_params(LGBM_PARAMS)
         mlflow.log_param("train_rows", len(X_train))
         mlflow.log_param("val_rows", len(X_val))
@@ -88,18 +90,23 @@ def train(
         mlflow.log_metric("val_logloss", logloss)
         logger.info(f"Val AUC: {auc:.4f}  LogLoss: {logloss:.4f}")
 
-        mlflow.lightgbm.log_model(model, artifact_path="model")
-
+        # Log encoders at run level — inference downloads via run_id
         with tempfile.TemporaryDirectory() as tmp:
-            enc_path = f"{tmp}/encoders.pkl"
+            enc_path = f"{tmp}/{ENCODERS_ARTIFACT}"
             with open(enc_path, "wb") as f:
                 pickle.dump(encoders, f)
             mlflow.log_artifact(enc_path)
 
+        # Log the LightGBM model — MLflow 3.x creates a logged_model
+        model_info = mlflow.lightgbm.log_model(model, name="model")
+        logger.info(f"Logged model URI: {model_info.model_uri}")
+
         if register:
-            run_id = mlflow.active_run().info.run_id
-            mlflow.register_model(f"runs:/{run_id}/model", "ad-click-lgbm")
-            logger.info("Model registered in MLflow Model Registry")
+            mv = mlflow.register_model(model_info.model_uri, MODEL_NAME)
+            # Stamp the version with the run_id holding the encoders
+            client = mlflow.MlflowClient()
+            client.set_model_version_tag(MODEL_NAME, mv.version, "encoders_run_id", run.info.run_id)
+            logger.info(f"Registered {MODEL_NAME} v{mv.version} (encoders_run_id={run.info.run_id[:8]}…)")
 
 
 if __name__ == "__main__":

@@ -25,8 +25,19 @@ train:
 tune:
 	.venv/bin/python -m src.models.tune
 
+promote:
+	.venv/bin/python -m src.models.promote
+
+populate-store:
+	.venv/bin/python -m src.features.populate_store
+
+batch-score:
+	.venv/bin/python -m src.models.batch_score \
+		--input data/processed/test.csv \
+		--output data/processed/test_predictions.parquet
+
 serve:
-	uvicorn src.api.main:app --host 0.0.0.0 --port 8000 --reload
+	.venv/bin/uvicorn src.api.main:app --host 0.0.0.0 --port 8000 --reload
 
 mlflow:
 	mkdir -p mlruns
