@@ -28,7 +28,10 @@ dependencies = [
     "redis>=5.0",
 
     # Monitoring
-    "evidently>=0.4",
+    "evidently>=0.7",
+    "psycopg2-binary>=2.9",
+    "streamlit>=1.35",
+    "plotly>=5.21",
 
     # Data versioning
     "dvc>=3.50",

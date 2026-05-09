@@ -39,6 +39,12 @@ batch-score:
 serve:
 	.venv/bin/uvicorn src.api.main:app --host 0.0.0.0 --port 8000 --reload
 
+dashboard:
+	.venv/bin/streamlit run src/monitoring/dashboard.py
+
+drift:
+	.venv/bin/python -m src.monitoring.drift
+
 mlflow:
 	mkdir -p mlruns
 	.venv/bin/mlflow server \

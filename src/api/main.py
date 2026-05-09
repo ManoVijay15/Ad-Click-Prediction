@@ -4,13 +4,14 @@ import os
 from contextlib import asynccontextmanager
 
 import pandas as pd
-from fastapi import FastAPI, HTTPException
+from fastapi import BackgroundTasks, FastAPI, HTTPException
 from loguru import logger
 from pydantic import BaseModel, Field
 
 from src.features.engineering import build_features, FEATURE_COLS
 from src.features.store import get_store
 from src.models.loader import load_model_and_encoders
+from src.monitoring.logger import get_logger
 
 MODEL_NAME = os.getenv("MODEL_NAME", "ad-click-lgbm")
 MODEL_ALIAS = os.getenv("MODEL_ALIAS", "production")
@@ -24,7 +25,8 @@ async def lifespan(app: FastAPI):
     _state["model"] = model
     _state["encoders"] = encoders
     _state["version"] = version
-    get_store()  # warm the feature store connection
+    get_store()
+    get_logger()
     logger.info(f"API ready — {MODEL_NAME} v{version}")
     yield
 
@@ -65,17 +67,17 @@ class AdResponse(BaseModel):
 
 
 @app.post("/predict", response_model=AdResponse)
-async def predict(request: AdRequest):
+async def predict(request: AdRequest, background: BackgroundTasks):
     model = _state["model"]
     if model is None:
         raise HTTPException(status_code=503, detail="Model not loaded")
 
-    df = pd.DataFrame([request.model_dump()])
+    payload = request.model_dump()
+    df = pd.DataFrame([payload])
     df, _ = build_features(df, encoders=_state["encoders"])
     feature_cols = [c for c in FEATURE_COLS if c in df.columns]
-    X = df[feature_cols]
-
-    proba = float(model.predict_proba(X)[0, 1])
+    proba = float(model.predict_proba(df[feature_cols])[0, 1])
+    will_click = proba >= 0.5
 
     store = get_store()
     cached = {
@@ -84,12 +86,46 @@ async def predict(request: AdRequest):
         **{f"device_{k}": v for k, v in store.get("device", request.device_id).items()},
     }
 
+    background.add_task(
+        get_logger().log,
+        proba,
+        will_click,
+        _state["version"],
+        payload,
+        cached or None,
+    )
+
     return AdResponse(
         click_probability=proba,
-        will_click=proba >= 0.5,
+        will_click=will_click,
         model_version=_state["version"],
         cached_features=cached or None,
     )
+
+
+class FeedbackRequest(BaseModel):
+    prediction_id: int
+    actual_click: int = Field(..., ge=0, le=1)
+
+
+@app.post("/feedback")
+async def feedback(request: FeedbackRequest):
+    """Update a logged prediction with the ground-truth click label."""
+    pred_logger = get_logger()
+    if not pred_logger.enabled:
+        raise HTTPException(status_code=503, detail="Prediction logger unavailable")
+    import psycopg2
+    try:
+        with psycopg2.connect(pred_logger.dsn) as conn, conn.cursor() as cur:
+            cur.execute(
+                "UPDATE predictions SET actual_click = %s WHERE id = %s",
+                (request.actual_click, request.prediction_id),
+            )
+            if cur.rowcount == 0:
+                raise HTTPException(status_code=404, detail="prediction_id not found")
+        return {"status": "updated", "prediction_id": request.prediction_id}
+    except psycopg2.Error as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.get("/health")
