@@ -27,6 +27,9 @@ jobs:
       - name: Run unit tests
         run: pytest tests/unit/ -v --cov=src --cov-report=xml
 
+      - name: Run integration tests
+        run: pytest tests/integration/ -v
+
       - name: Upload coverage
         uses: codecov/codecov-action@v4
         with:
@@ -39,5 +42,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
       - name: Build Docker image
-        run: docker build -f docker/Dockerfile -t ad-click-prediction:${{ github.sha }} .
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: docker/Dockerfile
+          push: false
+          tags: ad-click-prediction:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

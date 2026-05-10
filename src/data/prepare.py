@@ -18,6 +18,7 @@ Outputs:
 import argparse
 import json
 import os
+
 import pandas as pd
 from loguru import logger
 
@@ -98,7 +99,10 @@ def split_and_save(df: pd.DataFrame, out_dir: str) -> dict:
         json.dump(stats, f, indent=2)
 
     logger.info(f"Splits saved → train={len(train):,}  val={len(val):,}  test={len(test):,}")
-    logger.info(f"CTR — train={stats['train_ctr']:.4f}  val={stats['val_ctr']:.4f}  test={stats['test_ctr']:.4f}")
+    logger.info(
+        f"CTR — train={stats['train_ctr']:.4f}  "
+        f"val={stats['val_ctr']:.4f}  test={stats['test_ctr']:.4f}"
+    )
     return stats
 
 

@@ -49,7 +49,9 @@ def hash_high_cardinality(df: pd.DataFrame, n_buckets: int = N_BUCKETS) -> pd.Da
     return df
 
 
-def encode_categoricals(df: pd.DataFrame, encoders: dict | None = None) -> tuple[pd.DataFrame, dict]:
+def encode_categoricals(
+    df: pd.DataFrame, encoders: dict | None = None
+) -> tuple[pd.DataFrame, dict]:
     df = df.copy()
     encoders = encoders or {}
     for col in LABEL_COLS:

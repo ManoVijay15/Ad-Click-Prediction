@@ -1,0 +1,44 @@
+# DVC pipeline. Initialise with:
+#   dvc init
+#   dvc remote add -d local-store /tmp/adclick-dvc-store
+#   dvc add data/raw/train.csv
+#   dvc repro
+stages:
+  prepare:
+    cmd: python -m src.data.prepare
+    deps:
+      - src/data/prepare.py
+      - data/raw/train.csv
+    outs:
+      - data/processed/train.csv
+      - data/processed/val.csv
+      - data/processed/test.csv
+    metrics:
+      - data/processed/stats.json:
+          cache: false
+
+  train:
+    cmd: python -m src.models.train --sample 5000000 --register
+    deps:
+      - src/models/train.py
+      - src/features/engineering.py
+      - data/processed/train.csv
+      - data/processed/val.csv
+
+  populate_store:
+    cmd: python -m src.features.populate_store --sample 5000000
+    deps:
+      - src/features/populate_store.py
+      - src/features/store.py
+      - data/processed/train.csv
+
+  batch_score:
+    cmd: |
+      python -m src.models.batch_score \
+        --input data/processed/test.csv \
+        --output data/processed/test_predictions.parquet
+    deps:
+      - src/models/batch_score.py
+      - data/processed/test.csv
+    outs:
+      - data/processed/test_predictions.parquet

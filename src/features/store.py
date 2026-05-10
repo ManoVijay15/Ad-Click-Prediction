@@ -58,7 +58,10 @@ class FeatureStore:
         try:
             key = self._key(entity_type, entity_id)
             pipe = self.client.pipeline()
-            pipe.hset(key, mapping={k: json.dumps(v) if isinstance(v, dict) else v for k, v in features.items()})
+            pipe.hset(key, mapping={
+                k: json.dumps(v) if isinstance(v, dict) else v
+                for k, v in features.items()
+            })
             pipe.expire(key, self.ttl)
             pipe.execute()
         except (redis.ConnectionError, redis.TimeoutError) as e:

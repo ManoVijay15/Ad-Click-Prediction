@@ -8,7 +8,7 @@ from fastapi import BackgroundTasks, FastAPI, HTTPException
 from loguru import logger
 from pydantic import BaseModel, Field
 
-from src.features.engineering import build_features, FEATURE_COLS
+from src.features.engineering import FEATURE_COLS, build_features
 from src.features.store import get_store
 from src.models.loader import load_model_and_encoders
 from src.monitoring.logger import get_logger

@@ -10,7 +10,7 @@ import pandas as pd
 from loguru import logger
 from sklearn.metrics import roc_auc_score
 
-from src.features.engineering import build_features, FEATURE_COLS
+from src.features.engineering import FEATURE_COLS, build_features
 
 MLFLOW_URI = os.getenv("MLFLOW_TRACKING_URI", "http://localhost:5000")
 EXPERIMENT_NAME = "ad-click-lgbm-tuning"

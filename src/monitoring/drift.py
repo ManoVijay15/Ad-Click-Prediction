@@ -55,7 +55,7 @@ def detect_drift(
     output_path: str = "reports/drift.html",
     sample: int = 100_000,
 ) -> dict:
-    from evidently import Dataset, DataDefinition, Report
+    from evidently import DataDefinition, Dataset, Report
     from evidently.presets import DataDriftPreset
 
     logger.info(f"Loading reference from {reference_path}")

@@ -1,4 +1,7 @@
-.PHONY: install lint test train serve infra-up infra-down clean
+.PHONY: install lint test test-unit test-integration train tune baseline promote \
+        populate-store batch-score serve dashboard drift mlflow \
+        infra-up infra-down infra-up-all docker-build docker-run \
+        dvc-init clean
 
 install:
 	pip install -e ".[dev]"
@@ -44,6 +47,21 @@ dashboard:
 
 drift:
 	.venv/bin/python -m src.monitoring.drift
+
+docker-build:
+	docker build -f docker/Dockerfile -t ad-click-prediction:latest .
+
+docker-run:
+	docker run --rm -p 8000:8000 \
+		-e MLFLOW_TRACKING_URI=http://host.docker.internal:5000 \
+		-e REDIS_URL=redis://host.docker.internal:6379 \
+		-e PREDICTION_LOG_DSN=postgresql://adclick:adclick@host.docker.internal:5432/adclick_mlflow \
+		ad-click-prediction:latest
+
+dvc-init:
+	.venv/bin/dvc init
+	.venv/bin/dvc remote add -d local-store /tmp/adclick-dvc-store
+	@echo "DVC initialised. Track data with: dvc add data/raw/train.csv"
 
 mlflow:
 	mkdir -p mlruns

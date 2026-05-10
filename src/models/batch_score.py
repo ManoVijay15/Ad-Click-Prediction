@@ -12,7 +12,7 @@ import argparse
 import pandas as pd
 from loguru import logger
 
-from src.features.engineering import build_features, FEATURE_COLS
+from src.features.engineering import FEATURE_COLS, build_features
 from src.models.loader import load_model_and_encoders
 
 CHUNK_SIZE = 500_000
@@ -51,7 +51,7 @@ def score(input_path: str, output_path: str, model_name: str, alias: str) -> Non
     logger.info(f"Wrote {len(final):,} predictions → {output_path}")
 
     if "actual" in final.columns:
-        from sklearn.metrics import roc_auc_score, log_loss
+        from sklearn.metrics import log_loss, roc_auc_score
         auc = roc_auc_score(final["actual"], final["click_probability"])
         ll = log_loss(final["actual"], final["click_probability"])
         logger.info(f"Holdout AUC: {auc:.4f}  LogLoss: {ll:.4f}")

@@ -1,0 +1,100 @@
+name: Retrain
+
+on:
+  schedule:
+    # 03:00 UTC every Monday
+    - cron: "0 3 * * 1"
+  workflow_dispatch:
+    inputs:
+      sample:
+        description: "Training sample size (0 = full dataset)"
+        required: false
+        default: "5000000"
+      register:
+        description: "Register the resulting model in MLflow"
+        required: false
+        default: "true"
+
+jobs:
+  drift-check:
+    runs-on: ubuntu-latest
+    outputs:
+      should_retrain: ${{ steps.gate.outputs.should_retrain }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      # In production this step would `dvc pull` the latest data + run drift
+      # against logged predictions in PostgreSQL.
+      - id: gate
+        name: Decide whether to retrain
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            echo "should_retrain=true" >> "$GITHUB_OUTPUT"
+            echo "Manual trigger — proceeding"
+          else
+            # Replace this with: python -m src.monitoring.drift && check share > 0.30
+            echo "should_retrain=true" >> "$GITHUB_OUTPUT"
+            echo "Scheduled retrain — proceeding"
+          fi
+
+  retrain:
+    needs: drift-check
+    if: needs.drift-check.outputs.should_retrain == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -e ".[dev]"
+
+      # Production: this would be `dvc pull data/processed/` to fetch the
+      # latest train/val splits from S3/GCS. Skipped in CI demo.
+      - name: Stage data (placeholder)
+        run: |
+          mkdir -p data/processed
+          echo "[demo] In production: dvc pull data/processed/"
+          echo "[demo] CI runner doesn't have the 5.9GB Avazu data — skipping training"
+
+      # When the runner has data + an MLflow tracking server, uncomment:
+      # - name: Train and register
+      #   env:
+      #     MLFLOW_TRACKING_URI: ${{ secrets.MLFLOW_TRACKING_URI }}
+      #   run: |
+      #     SAMPLE="${{ github.event.inputs.sample || '5000000' }}"
+      #     REGISTER_FLAG=""
+      #     if [[ "${{ github.event.inputs.register || 'true' }}" == "true" ]]; then
+      #       REGISTER_FLAG="--register"
+      #     fi
+      #     python -m src.models.train --sample "$SAMPLE" $REGISTER_FLAG
+      #
+      # - name: Promote new version
+      #   if: github.event.inputs.register != 'false'
+      #   env:
+      #     MLFLOW_TRACKING_URI: ${{ secrets.MLFLOW_TRACKING_URI }}
+      #   run: python -m src.models.promote --alias staging
+
+      - name: Smoke test the training entrypoint
+        run: |
+          python -c "from src.models.train import train, LGBM_PARAMS; print('train.py imports OK'); print('LGBM params:', LGBM_PARAMS)"
+
+  notify:
+    needs: retrain
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Status summary
+        run: |
+          echo "Retrain status: ${{ needs.retrain.result }}"
+          echo "Drift gate:     ${{ needs.drift-check.outputs.should_retrain }}"

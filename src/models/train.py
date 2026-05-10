@@ -10,9 +10,9 @@ import mlflow
 import mlflow.lightgbm
 import pandas as pd
 from loguru import logger
-from sklearn.metrics import roc_auc_score, log_loss
+from sklearn.metrics import log_loss, roc_auc_score
 
-from src.features.engineering import build_features, FEATURE_COLS
+from src.features.engineering import FEATURE_COLS, build_features
 
 MLFLOW_URI = os.getenv("MLFLOW_TRACKING_URI", "http://localhost:5000")
 EXPERIMENT_NAME = "ad-click-lgbm"
@@ -105,8 +105,13 @@ def train(
             mv = mlflow.register_model(model_info.model_uri, MODEL_NAME)
             # Stamp the version with the run_id holding the encoders
             client = mlflow.MlflowClient()
-            client.set_model_version_tag(MODEL_NAME, mv.version, "encoders_run_id", run.info.run_id)
-            logger.info(f"Registered {MODEL_NAME} v{mv.version} (encoders_run_id={run.info.run_id[:8]}…)")
+            client.set_model_version_tag(
+                MODEL_NAME, mv.version, "encoders_run_id", run.info.run_id
+            )
+            logger.info(
+                f"Registered {MODEL_NAME} v{mv.version} "
+                f"(encoders_run_id={run.info.run_id[:8]}…)"
+            )
 
 
 if __name__ == "__main__":

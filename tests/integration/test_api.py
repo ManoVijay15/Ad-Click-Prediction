@@ -6,7 +6,6 @@ import numpy as np
 import pytest
 from fastapi.testclient import TestClient
 
-
 SAMPLE_PAYLOAD = {
     "hour": 14102100,
     "banner_pos": 0,
@@ -33,8 +32,14 @@ def client():
     mock_store = MagicMock()
     mock_store.get.return_value = {}
 
-    with patch.dict("src.api.main._state", {"model": mock_model, "version": "1"}), \
-         patch("src.api.main.get_store", return_value=mock_store):
+    mock_pred_logger = MagicMock()
+    mock_pred_logger.enabled = False
+
+    with (
+        patch("src.api.main.load_model_and_encoders", return_value=(mock_model, {}, "1")),
+        patch("src.api.main.get_store", return_value=mock_store),
+        patch("src.api.main.get_logger", return_value=mock_pred_logger),
+    ):
         from src.api.main import app
         with TestClient(app) as c:
             yield c
@@ -43,7 +48,10 @@ def client():
 def test_health(client):
     response = client.get("/health")
     assert response.status_code == 200
-    assert response.json()["status"] == "ok"
+    body = response.json()
+    assert body["status"] == "ok"
+    assert body["model_loaded"] is True
+    assert body["model_version"] == "1"
 
 
 def test_predict_returns_probability(client):
@@ -59,3 +67,11 @@ def test_predict_will_click_threshold(client):
     response = client.post("/predict", json=SAMPLE_PAYLOAD)
     data = response.json()
     assert data["will_click"] == (data["click_probability"] >= data["threshold"])
+
+
+def test_feedback_when_logger_disabled(client):
+    response = client.post(
+        "/feedback",
+        json={"prediction_id": 1, "actual_click": 1},
+    )
+    assert response.status_code == 503

@@ -18,10 +18,10 @@ import mlflow
 import pandas as pd
 from loguru import logger
 from sklearn.linear_model import SGDClassifier
-from sklearn.metrics import roc_auc_score, log_loss
+from sklearn.metrics import log_loss, roc_auc_score
 from sklearn.preprocessing import MaxAbsScaler
 
-from src.features.engineering import build_features, FEATURE_COLS
+from src.features.engineering import FEATURE_COLS, build_features
 
 MLFLOW_URI = os.getenv("MLFLOW_TRACKING_URI", "http://localhost:5000")
 EXPERIMENT_NAME = "ad-click-baseline"
