@@ -6,8 +6,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     && rm -rf /var/lib/apt/lists/*
 
-COPY pyproject.toml .
-RUN pip install --no-cache-dir --user -e .
+# Source must be present for setuptools to discover the src package
+COPY pyproject.toml ./
+COPY src/ ./src/
+
+# Non-editable user install — bakes the package into ~/.local
+RUN pip install --no-cache-dir --user .
 
 
 FROM python:3.11-slim AS runtime
@@ -20,9 +24,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 
-COPY --from=builder /root/.local /home/app/.local
-COPY --chown=app:app pyproject.toml .
-COPY --chown=app:app src/ ./src/
+COPY --from=builder --chown=app:app /root/.local /home/app/.local
 
 ENV PATH=/home/app/.local/bin:$PATH \
     PYTHONUNBUFFERED=1 \
