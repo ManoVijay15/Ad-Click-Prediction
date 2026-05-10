@@ -2,11 +2,12 @@
 
 import pandas as pd
 import pytest
+
 from src.features.engineering import (
-    extract_time_features,
-    hash_high_cardinality,
     add_interaction_features,
     build_features,
+    extract_time_features,
+    hash_high_cardinality,
 )
 
 
